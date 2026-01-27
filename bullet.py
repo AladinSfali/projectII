@@ -1,4 +1,5 @@
 import pygame
+import math
 from pygame.sprite import Sprite
 
 class Bullet(Sprite):
@@ -9,20 +10,34 @@ class Bullet(Sprite):
         self.settings = ai_game.settings
         self.color = self.settings.bullet_color
 
-        # Create a bullets rect at (0, 0) and then set correct position.
-        self.rect = pygame.Rect(0,0, self.settings.bullet_width, self.settings.bullet_height)
-        self.rect.midtop = ai_game.ship.rect.midtop
+        # Create a bullet surface and rotate it to match the ship's angle.
+        self.image = pygame.Surface((self.settings.bullet_width, 
+                                     self.settings.bullet_height))
+        self.image.fill(self.color)
+        self.angle = ai_game.ship.angle
+        self.image = pygame.transform.rotate(self.image, self.angle)
+        
+        # Set the rect and its position.
+        self.rect = self.image.get_rect()
+        self.rect.center = ai_game.ship.rect.center
     
-        # Store the bullet's position as a float.
+        # Store the bullet's position and trajectory.
+        angle_rad = math.radians(self.angle)
+        
+        # Calculate speed components based on the ship's angle.
+        self.x_speed = -self.settings.bullet_speed * math.sin(angle_rad)
+        self.y_speed = -self.settings.bullet_speed * math.cos(angle_rad)
+
+        self.x = float(self.rect.x)
         self.y = float(self.rect.y)
 
     def update(self):
-        """Move the bullet up the screen"""
-        # Update the exact position of the bullet.
-        self.y -= self.settings.bullet_speed
-        # Update the rect position. 
+        """Move the bullet in the direction it was fired."""
+        self.x += self.x_speed
+        self.y += self.y_speed
+        self.rect.x = self.x
         self.rect.y = self.y
 
     def draw_bullet(self):
         """Draw the bullet to the screen"""
-        pygame.draw.rect(self.screen, self.color, self.rect)
+        self.screen.blit(self.image, self.rect)

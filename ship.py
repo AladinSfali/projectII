@@ -27,6 +27,7 @@ class Ship:
         self.moving_up = False
         self.moving_down = False
         self.angle = 0
+        self.visible = True
 
     def update(self):
         """Update the ship's position based on the movement flag."""
@@ -65,9 +66,16 @@ class Ship:
         elif self.moving_right:
             self.angle = 270
 
+    def center_ship(self):
+        """Center the ship on the screen and make it visible."""
+        self.rect.midbottom = self.screen_rect.midbottom
+        self.x = float(self.rect.x)
+        self.y = float(self.rect.y)
+        self.visible = True
+
     def blitme(self):
         """Draw the ship at its current location."""
-        self.screen.blit(self.image, self.rect)
-        rotated_image = pygame.transform.rotate(self.image, self.angle)
-        new_rect = rotated_image.get_rect(center=self.rect.center)
-        self.screen.blit(rotated_image, new_rect)
+        if self.visible:
+            rotated_image = pygame.transform.rotate(self.image, self.angle)
+            new_rect = rotated_image.get_rect(center=self.rect.center)
+            self.screen.blit(rotated_image, new_rect)
