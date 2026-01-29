@@ -22,7 +22,7 @@ class AlienInvasion:
         self.settings.screen_height = self.screen.get_rect().height
         pygame.display.set_caption("Alien Invasion")
         self.ship = Ship(self)
-        self.bullet = pygame.sprite.Group()
+        self.bullets = pygame.sprite.Group()
         self.aliens = pygame.sprite.Group()
         self.explosions = pygame.sprite.Group()
 
@@ -47,8 +47,6 @@ class AlienInvasion:
             self._update_explosions()
             self._update_screen()
             self.clock.tick(60)
-      
-        print(len(self.bullets))
             
 
     def _check_events(self):
@@ -73,11 +71,18 @@ class AlienInvasion:
         elif event.key == pygame.K_DOWN and self.game_active:
             self.ship.moving_down = True
         elif event.key == pygame.K_q:
-            sys.exit()
+            if self.game_active:
+                self.game_active = False
+                self.first_game = True
+                self.bullets.empty()
+                self.aliens.empty()
+                self.explosions.empty()
+            else:
+                sys.exit()
         elif event.key == pygame.K_SPACE and self.game_active:
             self._fire_bullet()
         elif event.key == pygame.K_s and self.first_game:
-            if self.selected_level in (1, 2):
+            if self.selected_level in (1, 2, 3):
                 self.aliens.empty()
                 self._create_fleet()
                 self.game_active = True
@@ -104,9 +109,9 @@ class AlienInvasion:
             
     def _fire_bullet(self):
         """Create a new bullet and add it to the bullets group."""
-        if len(self.bullet) < self.settings.bullet_allowed:
+        if len(self.bullets) < self.settings.bullet_allowed:
             new_bullet = Bullet(self)
-            self.bullet.add(new_bullet)
+            self.bullets.add(new_bullet)
     
     def _update_screen(self):
         """Update images on the screen, and flip to the new screen."""
@@ -115,7 +120,7 @@ class AlienInvasion:
         if self.first_game:
             self._draw_menu()
         else:
-            for bullet in self.bullet.sprites():
+            for bullet in self.bullets.sprites():
                 bullet.draw_bullet()
             self.ship.blitme()
             self.aliens.draw(self.screen)
@@ -161,15 +166,13 @@ class AlienInvasion:
 
         # Level 3 (Placeholder)
         l3_color = (0, 150, 0) if self.selected_level == 3 else (100, 100, 100)
-        l3_text = "> Level 3 (Locked) <" if self.selected_level == 3 else "  Level 3 (Locked)  "
+        l3_text = "> Level 3 <" if self.selected_level == 3 else "  Level 3  "
         l3_image = self.font.render(l3_text, True, l3_color, self.settings.bg_color)
         l3_rect = l3_image.get_rect(centerx=box_rect.centerx, top=l2_rect.bottom + 20)
         self.screen.blit(l3_image, l3_rect)
 
         # Render instructions
         instructions = f"Press 'S' to Start Level {self.selected_level}"
-        if self.selected_level > 2:
-            instructions = "Level Locked! Select Level 1 or 2"
         instr_image = self.font.render(instructions, True, (60, 60, 60), self.settings.bg_color)
         instr_rect = instr_image.get_rect(centerx=self.screen.get_rect().centerx, bottom=self.screen.get_rect().bottom - 100)
         self.screen.blit(instr_image, instr_rect)
@@ -193,30 +196,49 @@ class AlienInvasion:
     def _update_bullets(self):
         """Update position of bullets and get rid of old bullets"""
         # Update bullet position
-        self.bullet.update()
+        self.bullets.update()
 
         # Get rid of bullets that have disappeared off any edge.
-        for bullet in self.bullet.copy():
+        for bullet in self.bullets.copy():
             if (bullet.rect.bottom <= 0 or 
                 bullet.rect.top >= self.settings.screen_height or
                 bullet.rect.right <= 0 or 
                 bullet.rect.left >= self.settings.screen_width):
-                self.bullet.remove(bullet)
+                self.bullets.remove(bullet)
 
         # Check for any bullets that have hit aliens.
         # If so, get rid of the bullet and the alien.
-        collisions = pygame.sprite.groupcollide(self.bullet, self.aliens, True, True)
+        collisions = pygame.sprite.groupcollide(self.bullets, self.aliens, True, True)
         if collisions:
             for aliens_hit in collisions.values():
                 for alien in aliens_hit:
                     new_explosion = Explosion(self, alien.rect.center)
                     self.explosions.add(new_explosion)
 
+        if not self.aliens:
+            # Destroying all aliens returns to the main menu.
+            self.bullets.empty()
+            self.game_active = False
+            self.first_game = True
+
     def _update_aliens(self):
         """Update the positions of all aliens in the fleet."""
-        if self.selected_level == 1:
-            self._check_fleet_edges()
-        self.aliens.update()
+        if self.selected_level == 3:
+            # Aliens follow the ship
+            speed = getattr(self.settings, 'alien_speed', 1.5)
+            for alien in self.aliens.sprites():
+                dx = self.ship.rect.centerx - alien.rect.centerx
+                dy = self.ship.rect.centery - alien.rect.centery
+                dist = (dx**2 + dy**2)**0.5
+                if dist > 0:
+                    alien.x += (dx / dist) * speed
+                    alien.y += (dy / dist) * speed
+                    alien.rect.x = alien.x
+                    alien.rect.y = alien.y
+        else:
+            if self.selected_level == 1:
+                self._check_fleet_edges()
+            self.aliens.update()
 
         # Look for alien-ship collisions.
         if pygame.sprite.spritecollideany(self.ship, self.aliens):
@@ -235,7 +257,7 @@ class AlienInvasion:
         """Reset the game to start a new round."""
         # Clear out any remaining aliens, bullets, and explosions.
         self.aliens.empty()
-        self.bullet.empty()
+        self.bullets.empty()
         self.explosions.empty()
         
         # Create a new fleet and center the ship.
