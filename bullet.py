@@ -8,12 +8,15 @@ class Bullet(Sprite):
         super().__init__()
         self.screen = ai_game.screen
         self.settings = ai_game.settings
-        self.color = self.settings.bullet_color
 
-        # Create a bullet surface and rotate it to match the ship's angle.
-        self.image = pygame.Surface((self.settings.bullet_width, 
-                                     self.settings.bullet_height))
-        self.image.fill(self.color)
+        # Load the bullet image and rotate it to match the ship's angle.
+        try:
+            self.image = pygame.image.load('images/missile.png')
+            self.image = pygame.transform.scale(self.image, (self.settings.bullet_width, self.settings.bullet_height))
+        except FileNotFoundError:
+            self.image = pygame.Surface((self.settings.bullet_width, self.settings.bullet_height))
+            self.image.fill(self.settings.bullet_color)
+
         self.angle = ai_game.ship.angle
         self.image = pygame.transform.rotate(self.image, self.angle)
         

@@ -1,12 +1,18 @@
 import sys
 
 import pygame
+import random
 
 from settings import Settings
+from game_stats import GameStats
+from scoreboard import Scoreboard
 from ship import Ship
 from bullet import Bullet
 from alien import Alien
 from explosion import Explosion
+from alien_bullet import AlienBullet
+from powerup import PowerUp
+from star import Star
 
 class AlienInvasion:
     """Overall class to manage game assets and behaviour."""
@@ -16,6 +22,14 @@ class AlienInvasion:
         pygame.init()
         self.clock = pygame.time.Clock()
         self.settings = Settings()
+        
+        pygame.mixer.init()
+        try:
+            self.shoot_sound = pygame.mixer.Sound('sounds/laser.mp3')
+            self.explosion_sound = pygame.mixer.Sound('sounds/explosion.mp3')
+        except (FileNotFoundError, pygame.error):
+            self.shoot_sound = None
+            self.explosion_sound = None
 
         self.screen = pygame.display.set_mode((0,0), pygame.FULLSCREEN)
         self.settings.screen_width = self.screen.get_rect().width
@@ -23,8 +37,15 @@ class AlienInvasion:
         pygame.display.set_caption("Alien Invasion")
         self.ship = Ship(self)
         self.bullets = pygame.sprite.Group()
+        self.alien_bullets = pygame.sprite.Group()
         self.aliens = pygame.sprite.Group()
         self.explosions = pygame.sprite.Group()
+        self.stars = pygame.sprite.Group()
+        self.powerups = pygame.sprite.Group()
+        
+        # Create an instance to store game statistics.
+        self.stats = GameStats(self)
+        self.sb = Scoreboard(self)
 
         # Font for the game over message.
         self.font = pygame.font.SysFont(None, 48)
@@ -34,15 +55,23 @@ class AlienInvasion:
         self.first_game = True
         self.selected_level = 1
 
+        # Power-up state
+        self.powerup_active = False
+        self.powerup_start_time = 0
+
+        self._create_starfield()
         self._create_fleet()
 
     def run_game(self):
         """Start the main loop for the game."""
         while True:
             self._check_events()
+            self.stars.update()
             if self.game_active:
                 self.ship.update()
                 self._update_bullets()
+                self._update_alien_bullets()
+                self._update_powerups()
                 self._update_aliens()
             self._update_explosions()
             self._update_screen()
@@ -53,6 +82,7 @@ class AlienInvasion:
         """Respond to keypresses and mouse events."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                self._save_high_score()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
                 self._check_keydown_events(event)
@@ -71,19 +101,15 @@ class AlienInvasion:
         elif event.key == pygame.K_DOWN and self.game_active:
             self.ship.moving_down = True
         elif event.key == pygame.K_q:
-            if self.game_active:
-                self.game_active = False
-                self.first_game = True
-                self.bullets.empty()
-                self.aliens.empty()
-                self.explosions.empty()
-            else:
-                sys.exit()
+            self._save_high_score()
+            sys.exit()
         elif event.key == pygame.K_SPACE and self.game_active:
             self._fire_bullet()
         elif event.key == pygame.K_s and self.first_game:
             if self.selected_level in (1, 2, 3):
                 self.aliens.empty()
+                self.stats.reset_stats()
+                self.sb.prep_score()
                 self._create_fleet()
                 self.game_active = True
                 self.first_game = False
@@ -112,16 +138,23 @@ class AlienInvasion:
         if len(self.bullets) < self.settings.bullet_allowed:
             new_bullet = Bullet(self)
             self.bullets.add(new_bullet)
+            if self.shoot_sound:
+                self.shoot_sound.play()
     
     def _update_screen(self):
         """Update images on the screen, and flip to the new screen."""
         self.screen.fill(self.settings.bg_color)
+        self.stars.draw(self.screen)
 
         if self.first_game:
             self._draw_menu()
         else:
             for bullet in self.bullets.sprites():
                 bullet.draw_bullet()
+            for bullet in self.alien_bullets.sprites():
+                bullet.draw_bullet()
+            self.powerups.draw(self.screen)
+            self.sb.show_score()
             self.ship.blitme()
             self.aliens.draw(self.screen)
             for explosion in self.explosions.sprites():
@@ -210,54 +243,97 @@ class AlienInvasion:
         # If so, get rid of the bullet and the alien.
         collisions = pygame.sprite.groupcollide(self.bullets, self.aliens, True, True)
         if collisions:
+            if self.explosion_sound:
+                self.explosion_sound.play()
             for aliens_hit in collisions.values():
+                self.stats.score += self.settings.alien_points * len(aliens_hit)
                 for alien in aliens_hit:
                     new_explosion = Explosion(self, alien.rect.center)
                     self.explosions.add(new_explosion)
+                    # Chance to spawn a power-up
+                    if random.random() < 0.1:
+                        self.powerups.add(PowerUp(self, alien.rect.center))
+            self.sb.prep_score()
+            
+            if self.stats.score > self.stats.high_score:
+                self.stats.high_score = self.stats.score
 
-        if not self.aliens:
-            # Destroying all aliens returns to the main menu.
-            self.bullets.empty()
-            self.game_active = False
-            self.first_game = True
+    def _update_alien_bullets(self):
+        """Update position of alien bullets and check for collisions."""
+        self.alien_bullets.update()
+
+        # Get rid of bullets that have disappeared.
+        for bullet in self.alien_bullets.copy():
+            if bullet.rect.top >= self.settings.screen_height:
+                self.alien_bullets.remove(bullet)
+
+        # Check for collisions with the ship.
+        if pygame.sprite.spritecollideany(self.ship, self.alien_bullets):
+            self._ship_hit()
+
+    def _update_powerups(self):
+        """Update power-ups and check for collisions."""
+        self.powerups.update()
+
+        # Remove power-ups that have gone off screen
+        for powerup in self.powerups.copy():
+            if powerup.rect.top >= self.settings.screen_height:
+                self.powerups.remove(powerup)
+
+        # Check for collisions with the ship
+        if pygame.sprite.spritecollide(self.ship, self.powerups, True):
+            self.settings.bullet_width = 300
+            self.powerup_active = True
+            self.powerup_start_time = pygame.time.get_ticks()
+
+        # Check if power-up effect should expire (5 seconds)
+        if self.powerup_active and pygame.time.get_ticks() - self.powerup_start_time > 5000:
+            self.settings.bullet_width = 3
+            self.powerup_active = False
 
     def _update_aliens(self):
         """Update the positions of all aliens in the fleet."""
-        if self.selected_level == 3:
-            # Aliens follow the ship
-            speed = getattr(self.settings, 'alien_speed', 1.5)
-            for alien in self.aliens.sprites():
-                dx = self.ship.rect.centerx - alien.rect.centerx
-                dy = self.ship.rect.centery - alien.rect.centery
-                dist = (dx**2 + dy**2)**0.5
-                if dist > 0:
-                    alien.x += (dx / dist) * speed
-                    alien.y += (dy / dist) * speed
-                    alien.rect.x = alien.x
-                    alien.rect.y = alien.y
-        else:
-            if self.selected_level == 1:
-                self._check_fleet_edges()
-            self.aliens.update()
+        if self.selected_level == 1:
+            self._check_fleet_edges()
+        self.aliens.update()
 
         # Look for alien-ship collisions.
         if pygame.sprite.spritecollideany(self.ship, self.aliens):
             self._ship_hit()
             
+        # Alien firing logic for Level 2 and 3
+        if self.selected_level in (2, 3):
+            if self.aliens and random.random() < 0.01:
+                firing_alien = random.choice(self.aliens.sprites())
+                self._fire_alien_bullet(firing_alien)
+
     def _ship_hit(self):
         """Respond to the ship being hit by an alien."""
         # Create explosion at ship's position.
         new_explosion = Explosion(self, self.ship.rect.center)
         self.explosions.add(new_explosion)
         
-        self.ship.visible = False
-        self.game_active = False
+        self.stats.ships_left -= 1
+        if self.stats.ships_left > 0:
+            self.aliens.empty()
+            self.bullets.empty()
+            self.alien_bullets.empty()
+            self.powerups.empty()
+            self._create_fleet()
+            self.ship.center_ship()
+            pygame.time.delay(500)
+        else:
+            self.ship.visible = False
+            self.game_active = False
         
     def _reset_game(self):
         """Reset the game to start a new round."""
+        self._save_high_score()
         # Clear out any remaining aliens, bullets, and explosions.
         self.aliens.empty()
         self.bullets.empty()
+        self.alien_bullets.empty()
+        self.powerups.empty()
         self.explosions.empty()
         
         # Create a new fleet and center the ship.
@@ -266,6 +342,17 @@ class AlienInvasion:
         
         # Restart the game state.
         self.game_active = True
+        self.stats.reset_stats()
+        self.sb.prep_score()
+        
+        # Reset power-ups
+        self.settings.bullet_width = 3
+        self.powerup_active = False
+
+    def _save_high_score(self):
+        """Save the high score to a file."""
+        with open('high_score.txt', 'w') as f:
+            f.write(str(self.stats.high_score))
 
     def _update_explosions(self):
         """Update the positions/state of all explosions."""
@@ -311,6 +398,16 @@ class AlienInvasion:
         new_alien.rect.y = y_position
         self.aliens.add(new_alien)
 
+    def _create_starfield(self):
+        """Create a sky full of stars."""
+        for _ in range(100):
+            star = Star(self)
+            self.stars.add(star)
+
+    def _fire_alien_bullet(self, alien):
+        """Create a new alien bullet."""
+        new_bullet = AlienBullet(self, alien)
+        self.alien_bullets.add(new_bullet)
 
 if __name__ == '__main__':
     # Make a game instance, and run the game.
