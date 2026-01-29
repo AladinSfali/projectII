@@ -23,6 +23,7 @@ class Alien(Sprite):
         self.x = float(self.rect.x)
         self.y = float(self.rect.y)
         self.level = ai_game.selected_level
+        self.has_powerup = False
 
         if self.level == 2:
             self.speed_x = random.choice([-1, 1]) * self.settings.alien_speed

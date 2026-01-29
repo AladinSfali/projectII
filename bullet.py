@@ -12,7 +12,6 @@ class Bullet(Sprite):
         # Load the bullet image and rotate it to match the ship's angle.
         try:
             self.image = pygame.image.load('images/missile.png')
-            self.image = pygame.transform.scale(self.image, (self.settings.bullet_width, self.settings.bullet_height))
         except FileNotFoundError:
             self.image = pygame.Surface((self.settings.bullet_width, self.settings.bullet_height))
             self.image.fill(self.settings.bullet_color)

@@ -31,9 +31,7 @@ class AlienInvasion:
             self.shoot_sound = None
             self.explosion_sound = None
 
-        self.screen = pygame.display.set_mode((0,0), pygame.FULLSCREEN)
-        self.settings.screen_width = self.screen.get_rect().width
-        self.settings.screen_height = self.screen.get_rect().height
+        self.screen = pygame.display.set_mode((self.settings.screen_width, self.settings.screen_height))
         pygame.display.set_caption("Alien Invasion")
         self.ship = Ship(self)
         self.bullets = pygame.sprite.Group()
@@ -251,7 +249,7 @@ class AlienInvasion:
                     new_explosion = Explosion(self, alien.rect.center)
                     self.explosions.add(new_explosion)
                     # Chance to spawn a power-up
-                    if random.random() < 0.1:
+                    if getattr(alien, 'has_powerup', False):
                         self.powerups.add(PowerUp(self, alien.rect.center))
             self.sb.prep_score()
             
@@ -387,6 +385,10 @@ class AlienInvasion:
             # Finished a row; rest x value, and increment y value.
             current_x = alien_width
             current_y += 8 * alien_height
+            
+        # Assign powerup to one random alien
+        if self.aliens:
+            random.choice(self.aliens.sprites()).has_powerup = True
 
 
     def _create_alien(self, x_position, y_position):

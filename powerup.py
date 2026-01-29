@@ -12,7 +12,7 @@ class PowerUp(Sprite):
 
         # Load the power-up image.
         try:
-            self.image = pygame.image.load('images/powerup_bolt.png')
+            self.image = pygame.image.load('images/star.png')
         except FileNotFoundError:
             self.image = pygame.Surface((30, 30))
             self.image.fill((255, 215, 0)) # Gold color
