@@ -56,6 +56,15 @@ class AlienInvasion:
         # Power-up state
         self.powerup_active = False
         self.powerup_start_time = 0
+        self.paused = False
+        self.victory = False
+        
+        # Boost settings
+        self.moving_boost = False
+        self.boost_limit = 1000
+        self.boost_remaining = self.boost_limit
+        self.is_boosting = False
+        self.saved_ship_speed = self.settings.ship_speed
 
         self._create_starfield()
         self._create_fleet()
@@ -66,11 +75,13 @@ class AlienInvasion:
             self._check_events()
             self.stars.update()
             if self.game_active:
-                self.ship.update()
-                self._update_bullets()
-                self._update_alien_bullets()
-                self._update_powerups()
-                self._update_aliens()
+                if not self.paused:
+                    self._update_boost()
+                    self.ship.update()
+                    self._update_bullets()
+                    self._update_alien_bullets()
+                    self._update_powerups()
+                    self._update_aliens()
             self._update_explosions()
             self._update_screen()
             self.clock.tick(60)
@@ -98,14 +109,36 @@ class AlienInvasion:
             self.ship.moving_up = True
         elif event.key == pygame.K_DOWN and self.game_active:
             self.ship.moving_down = True
+        elif event.key == pygame.K_b and self.game_active:
+            self.moving_boost = True
+        elif event.key == pygame.K_p and self.game_active:
+            self.paused = not self.paused
         elif event.key == pygame.K_q:
-            self._save_high_score()
-            sys.exit()
+            if self.first_game:
+                self._save_high_score()
+                sys.exit()
+            else:
+                self.game_active = False
+                self.first_game = True
+                self.victory = False
+                
+                # Clear all game elements to ensure clean state
+                self.aliens.empty()
+                self.bullets.empty()
+                self.alien_bullets.empty()
+                self.powerups.empty()
+                self.explosions.empty()
         elif event.key == pygame.K_SPACE and self.game_active:
             self._fire_bullet()
         elif event.key == pygame.K_s and self.first_game:
             if self.selected_level in (1, 2, 3):
+                # Clear all game elements before starting
                 self.aliens.empty()
+                self.bullets.empty()
+                self.alien_bullets.empty()
+                self.powerups.empty()
+                self.explosions.empty()
+                
                 self.stats.reset_stats()
                 self.sb.prep_score()
                 self._create_fleet()
@@ -130,6 +163,8 @@ class AlienInvasion:
             self.ship.moving_up = False
         elif event.key == pygame.K_DOWN:
             self.ship.moving_down = False
+        elif event.key == pygame.K_b:
+            self.moving_boost = False
             
     def _fire_bullet(self):
         """Create a new bullet and add it to the bullets group."""
@@ -157,11 +192,51 @@ class AlienInvasion:
             self.aliens.draw(self.screen)
             for explosion in self.explosions.sprites():
                 explosion.draw_explosion()
+            self._draw_boost_bar()
+            
+            if self.paused:
+                self._draw_pause_message()
                 
             if not self.game_active:
-                self._draw_game_over_message()
+                if self.victory:
+                    self._draw_victory_message()
+                else:
+                    self._draw_game_over_message()
 
         pygame.display.flip()
+
+    def _update_boost(self):
+        """Update ship speed based on boost status."""
+        if self.moving_boost and self.boost_remaining > 0:
+            if not self.is_boosting:
+                self.saved_ship_speed = self.settings.ship_speed
+                self.is_boosting = True
+            self.settings.ship_speed = self.saved_ship_speed * 5
+            self.boost_remaining -= self.clock.get_time()
+        else:
+            if self.is_boosting:
+                self.settings.ship_speed = self.saved_ship_speed
+                self.is_boosting = False
+            
+            if not self.moving_boost and self.boost_remaining < self.boost_limit:
+                self.boost_remaining += self.clock.get_time() * 0.5
+
+    def _draw_boost_bar(self):
+        """Draw the boost bar."""
+        bar_width = 200
+        bar_height = 15
+        x = 20
+        y = self.settings.screen_height - 30
+        
+        fill_width = int((self.boost_remaining / self.boost_limit) * bar_width)
+        if fill_width < 0: fill_width = 0
+        if fill_width > bar_width: fill_width = bar_width
+        
+        outline_rect = pygame.Rect(x, y, bar_width, bar_height)
+        fill_rect = pygame.Rect(x, y, fill_width, bar_height)
+        
+        pygame.draw.rect(self.screen, (0, 255, 255), fill_rect)
+        pygame.draw.rect(self.screen, (255, 255, 255), outline_rect, 2)
 
     def _draw_menu(self):
         """Draw the start menu."""
@@ -210,7 +285,7 @@ class AlienInvasion:
 
     def _draw_game_over_message(self):
         """Draw a 'pop-up' style message when the game is over."""
-        msg = "GAME OVER! Press 'R' to Restart or 'Q' to Quit"
+        msg = "GAME OVER! Press 'R' to Restart or 'Q' to Menu"
         msg_image = self.font.render(msg, True, (200, 0, 0), (255, 255, 255))
         msg_rect = msg_image.get_rect()
         msg_rect.center = self.screen.get_rect().center
@@ -222,6 +297,30 @@ class AlienInvasion:
         
         pygame.draw.rect(self.screen, (255, 255, 255), bg_rect)
         pygame.draw.rect(self.screen, (0, 0, 0), bg_rect, 2)
+        self.screen.blit(msg_image, msg_rect)
+
+    def _draw_victory_message(self):
+        """Draw a victory message."""
+        msg = "VICTORY! Press 'R' to Restart or 'Q' to Menu"
+        msg_image = self.font.render(msg, True, (0, 200, 0), (255, 255, 255))
+        msg_rect = msg_image.get_rect()
+        msg_rect.center = self.screen.get_rect().center
+        
+        # Draw a background box for the text
+        padding = 20
+        bg_rect = pygame.Rect(0, 0, msg_rect.width + padding, msg_rect.height + padding)
+        bg_rect.center = msg_rect.center
+        
+        pygame.draw.rect(self.screen, (255, 255, 255), bg_rect)
+        pygame.draw.rect(self.screen, (0, 0, 0), bg_rect, 2)
+        self.screen.blit(msg_image, msg_rect)
+
+    def _draw_pause_message(self):
+        """Draw a pause message."""
+        msg = "PAUSED"
+        msg_image = self.font.render(msg, True, (255, 255, 255))
+        msg_rect = msg_image.get_rect()
+        msg_rect.center = self.screen.get_rect().center
         self.screen.blit(msg_image, msg_rect)
 
     def _update_bullets(self):
@@ -255,6 +354,10 @@ class AlienInvasion:
             
             if self.stats.score > self.stats.high_score:
                 self.stats.high_score = self.stats.score
+            
+            if not self.aliens:
+                self.game_active = False
+                self.victory = True
 
     def _update_alien_bullets(self):
         """Update position of alien bullets and check for collisions."""
@@ -291,9 +394,20 @@ class AlienInvasion:
 
     def _update_aliens(self):
         """Update the positions of all aliens in the fleet."""
-        if self.selected_level == 1:
-            self._check_fleet_edges()
-        self.aliens.update()
+        if self.selected_level == 3:
+            for alien in self.aliens.sprites():
+                dx = self.ship.rect.centerx - alien.rect.centerx
+                dy = self.ship.rect.centery - alien.rect.centery
+                dist = (dx**2 + dy**2)**0.5
+                if dist > 0:
+                    alien.x += (dx / dist) * self.settings.alien_speed
+                    alien.y += (dy / dist) * self.settings.alien_speed
+                    alien.rect.x = alien.x
+                    alien.rect.y = alien.y
+        else:
+            if self.selected_level == 1:
+                self._check_fleet_edges()
+            self.aliens.update()
 
         # Look for alien-ship collisions.
         if pygame.sprite.spritecollideany(self.ship, self.aliens):
@@ -346,6 +460,12 @@ class AlienInvasion:
         # Reset power-ups
         self.settings.bullet_width = 3
         self.powerup_active = False
+        self.victory = False
+        self.boost_remaining = self.boost_limit
+        self.moving_boost = False
+        if self.is_boosting:
+            self.settings.ship_speed = self.saved_ship_speed
+            self.is_boosting = False
 
     def _save_high_score(self):
         """Save the high score to a file."""
@@ -376,11 +496,15 @@ class AlienInvasion:
         alien = Alien(self)
         alien_width, alien_height = alien.rect.size
 
+        x_spacing = 4 * alien_width
+        if self.selected_level == 3:
+            x_spacing = 8 * alien_width
+
         current_x, current_y = alien_width, alien_height
         while current_y < (self.settings.screen_height - 3 * alien_height):
             while current_x < (self.settings.screen_width - 2 * alien_width):
                 self._create_alien(current_x, current_y)
-                current_x += 4 * alien_width
+                current_x += x_spacing
 
             # Finished a row; rest x value, and increment y value.
             current_x = alien_width
