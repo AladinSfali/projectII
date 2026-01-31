@@ -14,6 +14,11 @@ class Ship:
         self.image = pygame.image.load('images/ship.png')
         self.rect = self.image.get_rect()
 
+        # Pre-render rotations
+        self.rotated_surfaces = {}
+        for angle in range(0, 360, 45):
+            self.rotated_surfaces[angle] = pygame.transform.rotate(self.image, angle)
+
         # Start each new ship at the bottom center of the screen.
         self.rect.midbottom = self.screen_rect.midbottom
         
@@ -28,6 +33,10 @@ class Ship:
         self.moving_down = False
         self.angle = 0
         self.visible = True
+        
+        # Invulnerability settings
+        self.invulnerable = False
+        self.invulnerable_start_time = 0
 
     def update(self):
         """Update the ship's position based on the movement flag."""
@@ -46,6 +55,11 @@ class Ship:
         # Update rect object from self.x and self.y.
         self.rect.x = self.x
         self.rect.y = self.y
+        
+        # Check invulnerability expiration
+        if self.invulnerable and pygame.time.get_ticks() - self.invulnerable_start_time > 1000:
+            self.invulnerable = False
+            self.visible = True
 
     def _update_angle(self):
         """Determine the angle of the ship based on movement flags."""
@@ -72,10 +86,17 @@ class Ship:
         self.x = float(self.rect.x)
         self.y = float(self.rect.y)
         self.visible = True
+        
+        # Trigger invulnerability
+        self.invulnerable = True
+        self.invulnerable_start_time = pygame.time.get_ticks()
 
     def blitme(self):
         """Draw the ship at its current location."""
+        if self.invulnerable and (pygame.time.get_ticks() // 200) % 2 == 0:
+            return
+
         if self.visible:
-            rotated_image = pygame.transform.rotate(self.image, self.angle)
-            new_rect = rotated_image.get_rect(center=self.rect.center)
-            self.screen.blit(rotated_image, new_rect)
+            current_image = self.rotated_surfaces[self.angle]
+            new_rect = current_image.get_rect(center=self.rect.center)
+            self.screen.blit(current_image, new_rect)

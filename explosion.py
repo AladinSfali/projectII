@@ -3,10 +3,14 @@ from pygame.sprite import Sprite
 
 class Explosion(Sprite):
     """A class to manage explosions when an alien is hit."""
+    image = None
+
     def __init__(self, ai_game, center):
         super().__init__()
         self.screen = ai_game.screen
-        self.image = pygame.image.load('images/explosion.png')
+        if Explosion.image is None:
+            Explosion.image = pygame.image.load('images/explosion.png')
+        self.image = Explosion.image
         self.rect = self.image.get_rect()
         self.rect.center = center
         
